@@ -1,0 +1,37 @@
+workflow:
+  rules:
+    - if: $CI_MERGE_REQUEST_ID               # Execute jobs in merge request context
+    - if: $CI_COMMIT_BRANCH == 'master'      # Execute jobs when a new commit is pushed to master branch
+    - if: $force
+
+image: docker:latest
+services:
+  - docker:dind
+
+variables:
+  DOCKER_HOST: "tcp://docker:2375"
+  DOCKER_DRIVER: overlay2
+
+maven-build:
+  cache:
+    paths:
+      - .m2/repository
+  variables:
+    MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
+  image: maven:3-jdk-11
+  script:
+    - mvn clean install
+  artifacts:
+    paths:
+      - exposed-dao-composite/target/exposed-dao-composite-*.jar
+    expire_in: 1 day
+    reports:
+      junit:
+        - exposed-dao-composite/target/surefire-reports/TEST-*.xml
+
+deploy:
+  image: maven:3-jdk-11
+  script:
+    - 'mvn deploy -s ci_settings.xml'
+  only:
+    - master
