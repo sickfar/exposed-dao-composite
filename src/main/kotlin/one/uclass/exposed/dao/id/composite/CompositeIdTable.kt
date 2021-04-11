@@ -216,7 +216,7 @@ open class IntIntIdTable(name: String = "", primaryColumnName: String, secondary
  * @param name table name, by default name will be resolved from a class name with "Table" suffix removed (if present)
  * @param columnName name for a primary key, "id" by default
  */
-open class LongLonIDTable(name: String = "", primaryColumnName: String, secondaryColumnName: String) :
+open class LongLongIdTable(name: String = "", primaryColumnName: String, secondaryColumnName: String) :
     CompositeIdTable<Long, Long>(name) {
     override val classifierId: Column<Long> = long(primaryColumnName)//.entityId()
     override val id: Column<CompositeEntityIdPart<Long>> =

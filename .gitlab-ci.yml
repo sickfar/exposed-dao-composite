@@ -30,8 +30,11 @@ maven-build:
         - exposed-dao-composite/target/surefire-reports/TEST-*.xml
 
 deploy:
+  cache:
+    paths:
+      - .m2/repository
   image: maven:3-jdk-11
   script:
-    - 'mvn deploy -s ci_settings.xml'
+    - 'mvn deploy -s ci_settings.xml -P release'
   only:
     - master
