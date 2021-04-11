@@ -2,7 +2,7 @@ package one.uclass.exposed.dao
 
 import one.uclass.exposed.dao.exceptions.EntityNotFoundException
 import one.uclass.exposed.dao.id.composite.CompositeEntityID
-import one.uclass.exposed.dao.id.composite.CompositeIDGenPart
+import one.uclass.exposed.dao.id.composite.CompositeEntityIdPart
 import one.uclass.exposed.dao.id.composite.CompositeIdTable
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.transactions.TransactionManager
@@ -14,27 +14,18 @@ import kotlin.reflect.full.primaryConstructor
 import kotlin.sequences.Sequence
 
 @Suppress("UNCHECKED_CAST")
-abstract class CompositeEntityClass<CID : Comparable<CID>, GID : Comparable<GID>, out T : CompositeEntity<CID, GID>>(
-    val table: CompositeIdTable<CID, GID>,
+abstract class CompositeEntityClass<ClassifierID : Comparable<ClassifierID>, ID : Comparable<ID>, out T : CompositeEntity<ClassifierID, ID>>(
+    val table: CompositeIdTable<ClassifierID, ID>,
     entityType: Class<T>? = null
 ) {
     internal val klass: Class<*> = entityType ?: javaClass.enclosingClass as Class<T>
     private val ctor = klass.kotlin.primaryConstructor!!
 
-    operator fun get(id: CompositeEntityID<CID, GID>): T = findById(id) ?: throw EntityNotFoundException(id, this)
+    operator fun get(id: CompositeEntityID<ClassifierID, ID>): T = findById(id) ?: throw EntityNotFoundException(id, this)
 
-    operator fun get(constId: CID, genId: GID): T = get(DaoEntityID(constId, genId, table))
+    operator fun get(classifierId: ClassifierID, id: ID): T = get(DaoCompositeEntityId(classifierId, id, table))
 
-    protected open fun warmCache(): EntityCache = TransactionManager.current().entityCache
-
-    /**
-     * Get an entity by its [id].
-     *
-     * @param id The id of the entity
-     *
-     * @return The entity that has this id or null if no entity was found.
-     */
-    fun findById(constId: CID, genId: GID): T? = findById(DaoEntityID(constId, genId, table))
+    protected open fun warmCache(): CompositeEntityCache = TransactionManager.current().compositeEntityCache
 
     /**
      * Get an entity by its [id].
@@ -43,17 +34,26 @@ abstract class CompositeEntityClass<CID : Comparable<CID>, GID : Comparable<GID>
      *
      * @return The entity that has this id or null if no entity was found.
      */
-    open fun findById(id: CompositeEntityID<CID, GID>): T? =
-        testCache(id) ?: find { table.constId eq id.constId and (table.genId eq id.genId) }.firstOrNull()
+    fun findById(classifierId: ClassifierID, id: ID): T? = findById(DaoCompositeEntityId(classifierId, id, table))
+
+    /**
+     * Get an entity by its [id].
+     *
+     * @param id The id of the entity
+     *
+     * @return The entity that has this id or null if no entity was found.
+     */
+    open fun findById(id: CompositeEntityID<ClassifierID, ID>): T? =
+        testCache(id) ?: find { table.classifierId eq id.classifierId and (table.id eq id.id) }.firstOrNull()
 
     /**
      * Reloads entity fields from database as new object.
      * @param flush whether pending entity changes should be flushed previously
      */
-    fun reload(entity: CompositeEntity<CID, GID>, flush: Boolean = false): T? {
+    fun reload(entity: CompositeEntity<ClassifierID, ID>, flush: Boolean = false): T? {
         if (flush) {
             if (entity.isNewEntity())
-                TransactionManager.current().entityCache.flushInserts(table)
+                TransactionManager.current().compositeEntityCache.flushInserts(table)
             else
                 entity.flush()
         }
@@ -61,8 +61,8 @@ abstract class CompositeEntityClass<CID : Comparable<CID>, GID : Comparable<GID>
         return findById(entity.id)
     }
 
-    internal open fun invalidateEntityInCache(o: CompositeEntity<CID, GID>) {
-        val entityAlreadyFlushed = o.id._genId._value != null
+    internal open fun invalidateEntityInCache(o: CompositeEntity<ClassifierID, ID>) {
+        val entityAlreadyFlushed = o.id._idPart._value != null
         val sameDatabase = TransactionManager.current().db == o.db
         if (entityAlreadyFlushed && sameDatabase) {
             val currentEntityInCache = testCache(o.id)
@@ -75,33 +75,33 @@ abstract class CompositeEntityClass<CID : Comparable<CID>, GID : Comparable<GID>
         }
     }
 
-    fun testCache(id: CompositeEntityID<CID, GID>): T? = warmCache().find(this, id)
+    fun testCache(id: CompositeEntityID<ClassifierID, ID>): T? = warmCache().find(this, id)
 
     fun testCache(cacheCheckCondition: T.() -> Boolean): Sequence<T> =
         warmCache().findAll(this).asSequence().filter { it.cacheCheckCondition() }
 
-    fun removeFromCache(entity: CompositeEntity<CID, GID>) {
+    fun removeFromCache(entity: CompositeEntity<ClassifierID, ID>) {
         val cache = warmCache()
         cache.remove(table, entity)
         cache.referrers.remove(entity.id)
         cache.removeTablesReferrers(listOf(table))
     }
 
-    open fun forEntityIds(constId: CID, ids: List<CompositeIDGenPart<GID>>): SizedIterable<T> {
+    open fun forEntityIds(classifierId: ClassifierID, ids: List<CompositeEntityIdPart<ID>>): SizedIterable<T> {
         val distinctIds = ids.distinct()
         if (distinctIds.isEmpty()) return emptySized()
 
-        val cached = distinctIds.mapNotNull { testCache(DaoEntityID(constId, it)) }
+        val cached = distinctIds.mapNotNull { testCache(DaoCompositeEntityId(classifierId, it)) }
 
         if (cached.size == distinctIds.size) {
             return SizedCollection(cached)
         }
 
-        return wrapRows(searchQuery(Op.build { table.constId eq constId and (table.genId inList distinctIds) }))
+        return wrapRows(searchQuery(Op.build { table.classifierId eq classifierId and (table.id inList distinctIds) }))
     }
 
-    fun forIds(constId: CID, ids: List<GID>): SizedIterable<T> =
-        forEntityIds(constId, ids.map { CompositeIDGenPart(it, table) })
+    fun forIds(classifierId: ClassifierID, ids: List<ID>): SizedIterable<T> =
+        forEntityIds(classifierId, ids.map { CompositeEntityIdPart(it, table) })
 
     fun wrapRows(rows: SizedIterable<ResultRow>): SizedIterable<T> = rows mapLazy {
         wrapRow(it)
@@ -203,21 +203,21 @@ abstract class CompositeEntityClass<CID : Comparable<CID>, GID : Comparable<GID>
      *
      * @return The amount of entities that conform to the [op] statement.
      */
-    fun count(constId: CID?, op: Op<Boolean>? = null): Long {
-        val countExpression = table.genId.count()
+    fun count(classifierId: ClassifierID?, op: Op<Boolean>? = null): Long {
+        val countExpression = table.id.count()
         val query =
-            table.slice(countExpression, *(constId?.let { arrayOf(table.constId.count()) } ?: arrayOf())).selectAll()
+            table.slice(countExpression, *(classifierId?.let { arrayOf(table.classifierId.count()) } ?: arrayOf())).selectAll()
                 .notForUpdate()
         op?.let { query.adjustWhere { op } }
         return query.first()[countExpression]
     }
 
-    protected open fun createInstance(entityId: CompositeEntityID<CID, GID>, row: ResultRow?): T =
+    protected open fun createInstance(entityId: CompositeEntityID<ClassifierID, ID>, row: ResultRow?): T =
         ctor.call(entityId) as T
 
-    fun wrap(id: CompositeEntityID<CID, GID>, row: ResultRow?): T {
+    fun wrap(id: CompositeEntityID<ClassifierID, ID>, row: ResultRow?): T {
         val transaction = TransactionManager.current()
-        return transaction.entityCache.find(this, id) ?: createInstance(id, row).also { new ->
+        return transaction.compositeEntityCache.find(this, id) ?: createInstance(id, row).also { new ->
             new.klass = this
             new.db = transaction.db
             warmCache().store(this, new)
@@ -231,31 +231,31 @@ abstract class CompositeEntityClass<CID : Comparable<CID>, GID : Comparable<GID>
      *
      * @return The entity that has been created.
      */
-    open fun new(constId: CID, init: T.() -> Unit) = new(constId, null, init)
+    open fun new(classifierId: ClassifierID, init: T.() -> Unit) = new(classifierId, null, init)
 
     /**
-     * Create a new entity with the fields that are set in the [init] block and with a set [genId].
+     * Create a new entity with the fields that are set in the [init] block and with a set [id].
      *
-     * @param genId The id of the entity. Set this to null if it should be automatically generated.
+     * @param id The id of the entity. Set this to null if it should be automatically generated.
      * @param init The block where the entities' fields can be set.
      *
      * @return The entity that has been created.
      */
-    open fun new(constId: CID, genId: GID?, init: T.() -> Unit): T {
-        val entityId = if (genId == null && table.genId.defaultValueFun != null)
-            DaoEntityID(constId, table.genId.defaultValueFun!!())
+    open fun new(classifierId: ClassifierID, id: ID?, init: T.() -> Unit): T {
+        val entityId = if (id == null && table.id.defaultValueFun != null)
+            DaoCompositeEntityId(classifierId, table.id.defaultValueFun!!())
         else
-            DaoEntityID(constId, genId, table)
+            DaoCompositeEntityId(classifierId, id, table)
         val prototype: T = createInstance(entityId, null)
         prototype.klass = this
         prototype.db = TransactionManager.current().db
         prototype._readValues = ResultRow.createAndFillDefaults(dependsOnColumns)
-        if (entityId._genId._value != null) {
-            prototype.writeValues[table.genId as Column<Any?>] = entityId
+        if (entityId._idPart._value != null) {
+            prototype.writeValues[table.id as Column<Any?>] = entityId
             warmCache().scheduleInsert(this, prototype)
         }
         prototype.init()
-        if (entityId._genId._value == null) {
+        if (entityId._idPart._value == null) {
             val readValues = prototype._readValues!!
             val writeValues = prototype.writeValues
             table.columns.filter { col ->
@@ -269,7 +269,7 @@ abstract class CompositeEntityClass<CID : Comparable<CID>, GID : Comparable<GID>
         return prototype
     }
 
-    inline fun view(op: SqlExpressionBuilder.() -> Op<Boolean>) = View(SqlExpressionBuilder.op(), this)
+    inline fun view(op: SqlExpressionBuilder.() -> Op<Boolean>) = CompositeView(SqlExpressionBuilder.op(), this)
 
     private val refDefinitions = HashMap<Pair<Column<*>, KClass<*>>, Any>()
 
@@ -282,75 +282,75 @@ abstract class CompositeEntityClass<CID : Comparable<CID>, GID : Comparable<GID>
     infix fun <REF : Comparable<REF>> optionalReferencedOn(column: Column<REF?>) =
         registerRefRule(column) { OptionalReference(column, this) }
 
-    infix fun <TCID : Comparable<TCID>, TargetID : Comparable<TargetID>, Target : CompositeEntity<TCID, TargetID>, REF : Comparable<REF>> CompositeEntityClass<TCID, TargetID, Target>.backReferencedOn(
+    infix fun <TClassifierID : Comparable<TClassifierID>, TargetID : Comparable<TargetID>, Target : CompositeEntity<TClassifierID, TargetID>, REF : Comparable<REF>> CompositeEntityClass<TClassifierID, TargetID, Target>.backReferencedOn(
         column: Column<REF>
     )
-            : ReadOnlyProperty<CompositeEntity<TCID, GID>, Target> =
+            : ReadOnlyProperty<CompositeEntity<TClassifierID, ID>, Target> =
         registerRefRule(column) { BackReference(column, this) }
 
     @JvmName("backReferencedOnOpt")
-    infix fun <TCID : Comparable<TCID>, TargetID : Comparable<TargetID>, Target : CompositeEntity<TCID, TargetID>, REF : Comparable<REF>> CompositeEntityClass<TCID, TargetID, Target>.backReferencedOn(
+    infix fun <TClassifierID : Comparable<TClassifierID>, TargetID : Comparable<TargetID>, Target : CompositeEntity<TClassifierID, TargetID>, REF : Comparable<REF>> CompositeEntityClass<TClassifierID, TargetID, Target>.backReferencedOn(
         column: Column<REF?>
     )
-            : ReadOnlyProperty<CompositeEntity<TCID, GID>, Target> =
+            : ReadOnlyProperty<CompositeEntity<TClassifierID, ID>, Target> =
         registerRefRule(column) { BackReference(column, this) }
 
-    infix fun <TCID : Comparable<TCID>, TargetID : Comparable<TargetID>, Target : CompositeEntity<TCID, TargetID>, REF : Comparable<REF>> CompositeEntityClass<TCID, TargetID, Target>.optionalBackReferencedOn(
+    infix fun <TClassifierID : Comparable<TClassifierID>, TargetID : Comparable<TargetID>, Target : CompositeEntity<TClassifierID, TargetID>, REF : Comparable<REF>> CompositeEntityClass<TClassifierID, TargetID, Target>.optionalBackReferencedOn(
         column: Column<REF>
     ) = registerRefRule(column) {
-        OptionalBackReference<TCID, TargetID, Target, GID, CompositeEntity<TCID, GID>, REF>(
+        OptionalBackReference<TClassifierID, TargetID, Target, ID, CompositeEntity<TClassifierID, ID>, REF>(
             column as Column<REF?>,
             this
         )
     }
 
     @JvmName("optionalBackReferencedOnOpt")
-    infix fun <TCID : Comparable<TCID>, TargetID : Comparable<TargetID>, Target : CompositeEntity<TCID, TargetID>, REF : Comparable<REF>> CompositeEntityClass<TCID, TargetID, Target>.optionalBackReferencedOn(
+    infix fun <TClassifierID : Comparable<TClassifierID>, TargetID : Comparable<TargetID>, Target : CompositeEntity<TClassifierID, TargetID>, REF : Comparable<REF>> CompositeEntityClass<TClassifierID, TargetID, Target>.optionalBackReferencedOn(
         column: Column<REF?>
     ) = registerRefRule(column) {
-        OptionalBackReference<TCID, TargetID, Target, GID, CompositeEntity<TCID, GID>, REF>(
+        OptionalBackReference<TClassifierID, TargetID, Target, ID, CompositeEntity<TClassifierID, ID>, REF>(
             column,
             this
         )
     }
 
-    infix fun <TCID : Comparable<TCID>, TargetID : Comparable<TargetID>, Target : CompositeEntity<TCID, TargetID>, REF : Comparable<REF>> CompositeEntityClass<TCID, TargetID, Target>.referrersOn(
+    infix fun <TClassifierID : Comparable<TClassifierID>, TargetID : Comparable<TargetID>, Target : CompositeEntity<TClassifierID, TargetID>, REF : Comparable<REF>> CompositeEntityClass<TClassifierID, TargetID, Target>.referrersOn(
         column: Column<REF>
     ) = registerRefRule(column) {
-        Referrers<TCID, GID, CompositeEntity<TCID, GID>, TargetID, Target, REF>(
+        Referrers<TClassifierID, ID, CompositeEntity<TClassifierID, ID>, TargetID, Target, REF>(
             column,
             this,
             true
         )
     }
 
-    fun <TCID : Comparable<TCID>, TargetID : Comparable<TargetID>, Target : CompositeEntity<TCID, TargetID>, REF : Comparable<REF>> CompositeEntityClass<TCID, TargetID, Target>.referrersOn(
+    fun <TClassifierID : Comparable<TClassifierID>, TargetID : Comparable<TargetID>, Target : CompositeEntity<TClassifierID, TargetID>, REF : Comparable<REF>> CompositeEntityClass<TClassifierID, TargetID, Target>.referrersOn(
         column: Column<REF>,
         cache: Boolean
     ) = registerRefRule(column) {
-        Referrers<TCID, GID, CompositeEntity<TCID, GID>, TargetID, Target, REF>(
+        Referrers<TClassifierID, ID, CompositeEntity<TClassifierID, ID>, TargetID, Target, REF>(
             column,
             this,
             cache
         )
     }
 
-    infix fun <TCID : Comparable<TCID>, TargetID : Comparable<TargetID>, Target : CompositeEntity<TCID, TargetID>, REF : Comparable<REF>> CompositeEntityClass<TCID, TargetID, Target>.optionalReferrersOn(
+    infix fun <TClassifierID : Comparable<TClassifierID>, TargetID : Comparable<TargetID>, Target : CompositeEntity<TClassifierID, TargetID>, REF : Comparable<REF>> CompositeEntityClass<TClassifierID, TargetID, Target>.optionalReferrersOn(
         column: Column<REF?>
     ) = registerRefRule(column) {
-        OptionalReferrers<TCID, GID, CompositeEntity<TCID, GID>, TargetID, Target, REF>(
+        OptionalReferrers<TClassifierID, ID, CompositeEntity<TClassifierID, ID>, TargetID, Target, REF>(
             column,
             this,
             true
         )
     }
 
-    fun <TCID : Comparable<TCID>, TargetID : Comparable<TargetID>, Target : CompositeEntity<TCID, TargetID>, REF : Comparable<REF>> CompositeEntityClass<TCID, TargetID, Target>.optionalReferrersOn(
+    fun <TClassifierID : Comparable<TClassifierID>, TargetID : Comparable<TargetID>, Target : CompositeEntity<TClassifierID, TargetID>, REF : Comparable<REF>> CompositeEntityClass<TClassifierID, TargetID, Target>.optionalReferrersOn(
         column: Column<REF?>,
         cache: Boolean = false
     ) =
         registerRefRule(column) {
-            OptionalReferrers<TCID, GID, CompositeEntity<TCID, GID>, TargetID, Target, REF>(
+            OptionalReferrers<TClassifierID, ID, CompositeEntity<TClassifierID, ID>, TargetID, Target, REF>(
                 column,
                 this,
                 cache
@@ -367,15 +367,15 @@ abstract class CompositeEntityClass<CID : Comparable<CID>, GID : Comparable<GID>
 
     @Suppress("CAST_NEVER_SUCCEEDS")
     fun <SID> warmUpOptReferences(
-        constId: CID,
+        classifierId: ClassifierID,
         references: List<SID>,
         refColumn: Column<SID?>,
         forUpdate: Boolean? = null
     ): List<T> =
-        warmUpReferences(constId, references, refColumn as Column<SID>, forUpdate)
+        warmUpReferences(classifierId, references, refColumn as Column<SID>, forUpdate)
 
     fun <SID> warmUpReferences(
-        constId: CID,
+        classifierId: ClassifierID,
         references: List<SID>,
         refColumn: Column<SID>,
         forUpdate: Boolean? = null
@@ -384,10 +384,10 @@ abstract class CompositeEntityClass<CID : Comparable<CID>, GID : Comparable<GID>
         requireNotNull(parentTable) { "RefColumn should have reference to IdTable" }
         if (references.isEmpty()) return emptyList()
         val distinctRefIds = references.distinct()
-        val cache = TransactionManager.current().entityCache
+        val cache = TransactionManager.current().compositeEntityCache
         if (refColumn.columnType is EntityIDColumnType<*>) {
             refColumn as Column<CompositeEntityID<*, *>>
-            distinctRefIds as List<CompositeEntityID<CID, GID>>
+            distinctRefIds as List<CompositeEntityID<ClassifierID, ID>>
             val toLoad = distinctRefIds.filter {
                 cache.referrers[it]?.containsKey(refColumn)?.not() ?: true
             }
@@ -411,10 +411,10 @@ abstract class CompositeEntityClass<CID : Comparable<CID>, GID : Comparable<GID>
             return distinctRefIds.flatMap { cache.referrers[it]?.get(refColumn)?.toList().orEmpty() } as List<T>
         } else {
             val baseQuery = searchQuery(Op.build { refColumn inList distinctRefIds })
-            val finalQuery = if (parentTable.genId in baseQuery.set.fields)
+            val finalQuery = if (parentTable.id in baseQuery.set.fields)
                 baseQuery
             else {
-                baseQuery.adjustSlice { slice(this.fields + parentTable.genId) }
+                baseQuery.adjustSlice { slice(this.fields + parentTable.id) }
                     .adjustColumnSet { innerJoin(parentTable, { refColumn }, { refColumn.referee!! }) }
             }
 
@@ -425,15 +425,15 @@ abstract class CompositeEntityClass<CID : Comparable<CID>, GID : Comparable<GID>
                 else -> findQuery
             }.toList().distinct()
 
-            entities.groupBy { it.readValues[parentTable.genId] }.forEach { (id, values) ->
-                cache.getOrPutReferrers(DaoEntityID(constId, id), refColumn) { SizedCollection(values) }
+            entities.groupBy { it.readValues[parentTable.id] }.forEach { (id, values) ->
+                cache.getOrPutReferrers(DaoCompositeEntityId(classifierId, id), refColumn) { SizedCollection(values) }
             }
             return entities
         }
     }
 
     fun warmUpLinkedReferences(
-        constId: Any,
+        classifierId: Any,
         references: List<CompositeEntityID<*, *>>,
         linkTable: Table,
         forUpdate: Boolean? = null
@@ -441,16 +441,16 @@ abstract class CompositeEntityClass<CID : Comparable<CID>, GID : Comparable<GID>
         if (references.isEmpty()) return emptyList()
         val distinctRefIds = references.distinct()
         val sourceRefColumn =
-            linkTable.columns.singleOrNull { it.referee == references.first().table.genId } as? Column<CompositeIDGenPart<*>>
+            linkTable.columns.singleOrNull { it.referee == references.first().table.id } as? Column<CompositeEntityIdPart<*>>
                 ?: error("Can't detect source reference column")
         val targetRefColumn =
-            linkTable.columns.singleOrNull { it.referee == table.genId } as? Column<CompositeIDGenPart<*>>
+            linkTable.columns.singleOrNull { it.referee == table.id } as? Column<CompositeEntityIdPart<*>>
                 ?: error("Can't detect target reference column")
 
         val transaction = TransactionManager.current()
 
         val inCache =
-            transaction.entityCache.referrers.filter { it.key in distinctRefIds && sourceRefColumn in it.value }
+            transaction.compositeEntityCache.referrers.filter { it.key in distinctRefIds && sourceRefColumn in it.value }
                 .mapValues { it.value[sourceRefColumn]!! }
         val loaded = (distinctRefIds - inCache.keys).takeIf { it.isNotEmpty() }?.let { idsToLoad ->
             val alreadyInJoin = (dependsOnTables as? Join)?.alreadyInJoin(linkTable) ?: false
@@ -458,14 +458,14 @@ abstract class CompositeEntityClass<CID : Comparable<CID>, GID : Comparable<GID>
                 linkTable,
                 JoinType.INNER,
                 targetRefColumn,
-                table.genId
-            ) { table.constId eq constId as CID }
+                table.id
+            ) { table.classifierId eq classifierId as ClassifierID }
 
             val columns = (dependsOnColumns + (if (!alreadyInJoin) linkTable.columns else emptyList())
                     - sourceRefColumn).distinct() + sourceRefColumn
 
             val query = entityTables.slice(columns)
-                .select { (sourceRefColumn.table as CompositeIdTable<CID, *>).constId eq constId as CID and (sourceRefColumn inList idsToLoad.map { it._genId }) }
+                .select { (sourceRefColumn.table as CompositeIdTable<ClassifierID, *>).classifierId eq classifierId as ClassifierID and (sourceRefColumn inList idsToLoad.map { it._idPart }) }
             val entitiesWithRefs = when (forUpdate) {
                 true -> query.forUpdate()
                 false -> query.notForUpdate()
@@ -475,7 +475,7 @@ abstract class CompositeEntityClass<CID : Comparable<CID>, GID : Comparable<GID>
             val groupedBySourceId = entitiesWithRefs.groupBy { it.first }.mapValues { it.value.map { it.second } }
 
             idsToLoad.forEach {
-                transaction.entityCache.getOrPutReferrers(it, sourceRefColumn) {
+                transaction.compositeEntityCache.getOrPutReferrers(it, sourceRefColumn) {
                     SizedCollection(
                         groupedBySourceId[it] ?: emptyList()
                     )
@@ -486,16 +486,16 @@ abstract class CompositeEntityClass<CID : Comparable<CID>, GID : Comparable<GID>
         return inCache.values.flatMap { it.toList() as List<T> } + loaded.orEmpty()
     }
 
-    fun <CID : Comparable<CID>, GID : Comparable<GID>, T : CompositeEntity<CID, GID>> isAssignableTo(entityClass: CompositeEntityClass<CID, GID, T>) =
+    fun <ClassifierID : Comparable<ClassifierID>, ID : Comparable<ID>, T : CompositeEntity<ClassifierID, ID>> isAssignableTo(entityClass: CompositeEntityClass<ClassifierID, ID, T>) =
         entityClass.klass.isAssignableFrom(klass)
 }
 
-abstract class ImmutableEntityClass<CID : Comparable<CID>, GID : Comparable<GID>, out T : CompositeEntity<CID, GID>>(
-    table: CompositeIdTable<CID, GID>,
+abstract class ImmutableEntityClass<ClassifierID : Comparable<ClassifierID>, ID : Comparable<ID>, out T : CompositeEntity<ClassifierID, ID>>(
+    table: CompositeIdTable<ClassifierID, ID>,
     entityType: Class<T>? = null
-) : CompositeEntityClass<CID, GID, T>(table, entityType) {
-    open fun <T> forceUpdateEntity(entity: CompositeEntity<CID, GID>, column: Column<T>, value: T) {
-        table.update({ table.constId eq entity.id.constId and (table.genId eq entity.id.genId) }) {
+) : CompositeEntityClass<ClassifierID, ID, T>(table, entityType) {
+    open fun <T> forceUpdateEntity(entity: CompositeEntity<ClassifierID, ID>, column: Column<T>, value: T) {
+        table.update({ table.classifierId eq entity.id.classifierId and (table.id eq entity.id.id) }) {
             it[column] = value
         }
 
@@ -503,24 +503,24 @@ abstract class ImmutableEntityClass<CID : Comparable<CID>, GID : Comparable<GID>
            so that the next read of this entity using DAO API would return
            actual data from the DB */
 
-        TransactionManager.currentOrNull()?.entityCache?.remove(table, entity)
+        TransactionManager.currentOrNull()?.compositeEntityCache?.remove(table, entity)
     }
 }
 
-abstract class ImmutableCachedEntityClass<CID : Comparable<CID>, GID : Comparable<GID>, out T : CompositeEntity<CID, GID>>(
-    table: CompositeIdTable<CID, GID>,
+abstract class ImmutableCachedEntityClass<ClassifierID : Comparable<ClassifierID>, ID : Comparable<ID>, out T : CompositeEntity<ClassifierID, ID>>(
+    table: CompositeIdTable<ClassifierID, ID>,
     entityType: Class<T>? = null
-) : ImmutableEntityClass<CID, GID, T>(table, entityType) {
+) : ImmutableEntityClass<ClassifierID, ID, T>(table, entityType) {
 
     private val cacheLoadingState = Key<Any>()
     private var _cachedValues: MutableMap<Database, MutableMap<Pair<Any, Any>, CompositeEntity<*, *>>> =
         ConcurrentHashMap()
 
-    override fun invalidateEntityInCache(o: CompositeEntity<CID, GID>) {
+    override fun invalidateEntityInCache(o: CompositeEntity<ClassifierID, ID>) {
         warmCache()
     }
 
-    final override fun warmCache(): EntityCache {
+    final override fun warmCache(): CompositeEntityCache {
         val tr = TransactionManager.current()
         val db = tr.db
         val transactionCache = super.warmCache()
@@ -555,7 +555,7 @@ abstract class ImmutableCachedEntityClass<CID : Comparable<CID>, GID : Comparabl
         }
     }
 
-    override fun <T> forceUpdateEntity(entity: CompositeEntity<CID, GID>, column: Column<T>, value: T) {
+    override fun <T> forceUpdateEntity(entity: CompositeEntity<ClassifierID, ID>, column: Column<T>, value: T) {
         super.forceUpdateEntity(entity, column, value)
         entity._readValues?.set(column, value)
         expireCache()

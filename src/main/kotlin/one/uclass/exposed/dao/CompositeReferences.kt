@@ -19,34 +19,34 @@ private fun checkReference(reference: Column<*>, factoryTable: CompositeIdTable<
     }
 }
 
-class Reference<REF:Comparable<REF>, CID:Comparable<CID>, GID: Comparable<GID>, out Target : CompositeEntity<CID, GID>> (val reference: Column<REF>, val factory: CompositeEntityClass<CID, GID, Target>) {
+class Reference<REF:Comparable<REF>, ClassifierID:Comparable<ClassifierID>, ID: Comparable<ID>, out Target : CompositeEntity<ClassifierID, ID>> (val reference: Column<REF>, val factory: CompositeEntityClass<ClassifierID, ID, Target>) {
     init {
         checkReference(reference, factory.table)
     }
 }
 
-class OptionalReference<REF:Comparable<REF>, CID:Comparable<CID>, GID: Comparable<GID>, out Target : CompositeEntity<CID, GID>> (val reference: Column<REF?>, val factory: CompositeEntityClass<CID, GID, Target>) {
+class OptionalReference<REF:Comparable<REF>, ClassifierID:Comparable<ClassifierID>, ID: Comparable<ID>, out Target : CompositeEntity<ClassifierID, ID>> (val reference: Column<REF?>, val factory: CompositeEntityClass<ClassifierID, ID, Target>) {
     init {
         checkReference(reference, factory.table)
     }
 }
 
-internal class BackReference<CID:Comparable<CID>, ParentID:Comparable<ParentID>, out Parent: CompositeEntity<CID, ParentID>, ChildID:Comparable<ChildID>, in Child: CompositeEntity<CID, ChildID>, REF>
-(reference: Column<REF>, factory: CompositeEntityClass<CID, ParentID, Parent>) : ReadOnlyProperty<Child, Parent> {
-    internal val delegate = Referrers<CID, ChildID, Child, ParentID, Parent, REF>(reference, factory, true)
+internal class BackReference<ClassifierID:Comparable<ClassifierID>, ParentID:Comparable<ParentID>, out Parent: CompositeEntity<ClassifierID, ParentID>, ChildID:Comparable<ChildID>, in Child: CompositeEntity<ClassifierID, ChildID>, REF>
+(reference: Column<REF>, factory: CompositeEntityClass<ClassifierID, ParentID, Parent>) : ReadOnlyProperty<Child, Parent> {
+    internal val delegate = Referrers<ClassifierID, ChildID, Child, ParentID, Parent, REF>(reference, factory, true)
 
-    override operator fun getValue(thisRef: Child, property: KProperty<*>) = delegate.getValue(thisRef.apply { thisRef.id.genId }, property).single() // flush entity before to don't miss newly created entities
+    override operator fun getValue(thisRef: Child, property: KProperty<*>) = delegate.getValue(thisRef.apply { thisRef.id.id }, property).single() // flush entity before to don't miss newly created entities
 }
 
-class OptionalBackReference<CID:Comparable<CID>, ParentID:Comparable<ParentID>, out Parent: CompositeEntity<CID, ParentID>, ChildID:Comparable<ChildID>, in Child: CompositeEntity<CID, ChildID>, REF>
-(reference: Column<REF?>, factory: CompositeEntityClass<CID, ParentID, Parent>) : ReadOnlyProperty<Child, Parent?> {
-    internal val delegate = OptionalReferrers<CID, ChildID, Child, ParentID, Parent, REF>(reference, factory, true)
+class OptionalBackReference<ClassifierID:Comparable<ClassifierID>, ParentID:Comparable<ParentID>, out Parent: CompositeEntity<ClassifierID, ParentID>, ChildID:Comparable<ChildID>, in Child: CompositeEntity<ClassifierID, ChildID>, REF>
+(reference: Column<REF?>, factory: CompositeEntityClass<ClassifierID, ParentID, Parent>) : ReadOnlyProperty<Child, Parent?> {
+    internal val delegate = OptionalReferrers<ClassifierID, ChildID, Child, ParentID, Parent, REF>(reference, factory, true)
 
-    override operator fun getValue(thisRef: Child, property: KProperty<*>) = delegate.getValue(thisRef.apply { thisRef.id.genId }, property).singleOrNull()  // flush entity before to don't miss newly created entities
+    override operator fun getValue(thisRef: Child, property: KProperty<*>) = delegate.getValue(thisRef.apply { thisRef.id.id }, property).singleOrNull()  // flush entity before to don't miss newly created entities
 }
 
-class Referrers<CID:Comparable<CID>, ParentID:Comparable<ParentID>, in Parent: CompositeEntity<CID, ParentID>, ChildID:Comparable<ChildID>, out Child: CompositeEntity<CID, ChildID>, REF>
-(val reference: Column<REF>, val factory: CompositeEntityClass<CID, ChildID, Child>, val cache: Boolean) : ReadOnlyProperty<Parent, SizedIterable<Child>> {
+class Referrers<ClassifierID:Comparable<ClassifierID>, ParentID:Comparable<ParentID>, in Parent: CompositeEntity<ClassifierID, ParentID>, ChildID:Comparable<ChildID>, out Child: CompositeEntity<ClassifierID, ChildID>, REF>
+(val reference: Column<REF>, val factory: CompositeEntityClass<ClassifierID, ChildID, Child>, val cache: Boolean) : ReadOnlyProperty<Parent, SizedIterable<Child>> {
     init {
         reference.referee ?: error("Column $reference is not a reference")
 
@@ -57,15 +57,15 @@ class Referrers<CID:Comparable<CID>, ParentID:Comparable<ParentID>, in Parent: C
 
     override operator fun getValue(thisRef: Parent, property: KProperty<*>): SizedIterable<Child> {
         val value = thisRef.run { reference.referee<REF>()!!.lookup() }
-        if (thisRef.id._genId._value == null || value == null) return emptySized()
+        if (thisRef.id._idPart._value == null || value == null) return emptySized()
 
         val query = {factory.find{reference eq value }}
-        return if (cache) TransactionManager.current().entityCache.getOrPutReferrers(thisRef.id, reference, query) else query()
+        return if (cache) TransactionManager.current().compositeEntityCache.getOrPutReferrers(thisRef.id, reference, query) else query()
     }
 }
 
-class OptionalReferrers<CID: Comparable<CID>, ParentID:Comparable<ParentID>, in Parent: CompositeEntity<CID, ParentID>, ChildID:Comparable<ChildID>, out Child: CompositeEntity<CID, ChildID>, REF>
-(val reference: Column<REF?>, val factory: CompositeEntityClass<CID, ChildID, Child>, val cache: Boolean) : ReadOnlyProperty<Parent, SizedIterable<Child>> {
+class OptionalReferrers<ClassifierID: Comparable<ClassifierID>, ParentID:Comparable<ParentID>, in Parent: CompositeEntity<ClassifierID, ParentID>, ChildID:Comparable<ChildID>, out Child: CompositeEntity<ClassifierID, ChildID>, REF>
+(val reference: Column<REF?>, val factory: CompositeEntityClass<ClassifierID, ChildID, Child>, val cache: Boolean) : ReadOnlyProperty<Parent, SizedIterable<Child>> {
     init {
         reference.referee ?: error("Column $reference is not a reference")
 
@@ -76,10 +76,10 @@ class OptionalReferrers<CID: Comparable<CID>, ParentID:Comparable<ParentID>, in 
 
     override operator fun getValue(thisRef: Parent, property: KProperty<*>): SizedIterable<Child> {
         val value = thisRef.run { reference.referee<REF>()!!.lookup() }
-        if (thisRef.id._genId._value == null || value == null) return emptySized()
+        if (thisRef.id._idPart._value == null || value == null) return emptySized()
 
         val query = {factory.find{reference eq value }}
-        return if (cache) TransactionManager.current().entityCache.getOrPutReferrers(thisRef.id, reference, query)  else query()
+        return if (cache) TransactionManager.current().compositeEntityCache.getOrPutReferrers(thisRef.id, reference, query)  else query()
     }
 }
 
@@ -94,7 +94,7 @@ private fun <SRC: CompositeEntity<*, *>> filterRelationsForEntity(entity: SRC, r
 }
 
 @Suppress("UNCHECKED_CAST")
-private fun <CID: Comparable<CID>, GID: Comparable<GID>> List<CompositeEntity<CID, GID>>.preloadRelations(vararg relations: KProperty1<out CompositeEntity<*, *>, Any?>,
+private fun <ClassifierID: Comparable<ClassifierID>, ID: Comparable<ID>> List<CompositeEntity<ClassifierID, ID>>.preloadRelations(vararg relations: KProperty1<out CompositeEntity<*, *>, Any?>,
                                                                             nodesVisited: MutableSet<CompositeEntityClass<*, *, *>> = mutableSetOf())  {
     val entity              = this.firstOrNull() ?: return
     if(nodesVisited.contains(entity.klass)) {
@@ -121,30 +121,30 @@ private fun <CID: Comparable<CID>, GID: Comparable<GID>> List<CompositeEntity<CI
                 }
             }
             is Referrers<*, *, *, *, *, *> -> {
-                (refObject as Referrers<CID, GID, CompositeEntity<CID, GID>, *, CompositeEntity<CID, *>, Any>).reference.let { refColumn ->
+                (refObject as Referrers<ClassifierID, ID, CompositeEntity<ClassifierID, ID>, *, CompositeEntity<ClassifierID, *>, Any>).reference.let { refColumn ->
                     val refIds = this.map { it.run { refColumn.referee<Any>()!!.lookup() } }
-                    refObject.factory.warmUpReferences(entity.id.constId, refIds, refColumn)
+                    refObject.factory.warmUpReferences(entity.id.classifierId, refIds, refColumn)
                 }
             }
             is OptionalReferrers<*, *, *, *, *, *> -> {
-                (refObject as OptionalReferrers<CID, GID, CompositeEntity<CID, GID>, *, CompositeEntity<CID, *>, Any>).reference.let { refColumn ->
+                (refObject as OptionalReferrers<ClassifierID, ID, CompositeEntity<ClassifierID, ID>, *, CompositeEntity<ClassifierID, *>, Any>).reference.let { refColumn ->
                     val refIds = this.mapNotNull { it.run { refColumn.referee<Any?>()!!.lookup() } }
-                    refObject.factory.warmUpOptReferences(entity.id.constId, refIds, refColumn)
+                    refObject.factory.warmUpOptReferences(entity.id.classifierId, refIds, refColumn)
                 }
             }
-            is InnerTableLink<*, *, *, *, *> -> {
-                refObject.target.warmUpLinkedReferences(entity.id.constId, this.map{ it.id }, refObject.table)
+            is CompositeInnerTableLink<*, *, *, *, *> -> {
+                refObject.target.warmUpLinkedReferences(entity.id.classifierId, this.map{ it.id }, refObject.table)
             }
             is BackReference<*, *, *, *, *, *> -> {
-                (refObject.delegate as Referrers<CID, GID, CompositeEntity<CID, GID>, *, CompositeEntity<CID, *>, Any>).reference.let { refColumn ->
+                (refObject.delegate as Referrers<ClassifierID, ID, CompositeEntity<ClassifierID, ID>, *, CompositeEntity<ClassifierID, *>, Any>).reference.let { refColumn ->
                     val refIds = this.map { it.run { refColumn.referee<Any>()!!.lookup() } }
-                    refObject.delegate.factory.warmUpReferences(entity.id.constId, refIds, refColumn)
+                    refObject.delegate.factory.warmUpReferences(entity.id.classifierId, refIds, refColumn)
                 }
             }
             is OptionalBackReference<*, *, *, *, *, *> -> {
-                (refObject.delegate as OptionalReferrers<CID, GID, CompositeEntity<CID, GID>, *, CompositeEntity<CID, *>, Any>).reference.let { refColumn ->
+                (refObject.delegate as OptionalReferrers<ClassifierID, ID, CompositeEntity<ClassifierID, ID>, *, CompositeEntity<ClassifierID, *>, Any>).reference.let { refColumn ->
                     val refIds = this.map { it.run { refColumn.referee<Any>()!!.lookup() } }
-                    refObject.delegate.factory.warmUpOptReferences(entity.id.constId, refIds, refColumn)
+                    refObject.delegate.factory.warmUpOptReferences(entity.id.classifierId, refIds, refColumn)
                 }
             }
             else -> error("Relation delegate has an unknown type")
@@ -160,7 +160,7 @@ private fun <CID: Comparable<CID>, GID: Comparable<GID>> List<CompositeEntity<CI
                     is CompositeEntity<*, *> -> listOf(relation)
                     null                -> listOf()
                     else                -> error("Unrecognised loaded relation")
-                } as List<CompositeEntity<CID, Int>>
+                } as List<CompositeEntity<ClassifierID, Int>>
             }.groupBy { it::class }
 
             relationsToLoad.forEach { (_, entities) ->
@@ -170,10 +170,10 @@ private fun <CID: Comparable<CID>, GID: Comparable<GID>> List<CompositeEntity<CI
     }
 }
 
-fun <CID : Comparable<CID>, SRCID : Comparable<SRCID>, SRC: CompositeEntity<CID, SRCID>, REF : CompositeEntity<*, *>, T: Iterable<SRC>> T.with(vararg relations: KProperty1<out REF, Any?>): T = apply {
+fun <ClassifierID : Comparable<ClassifierID>, SRClassifierID : Comparable<SRClassifierID>, SRC: CompositeEntity<ClassifierID, SRClassifierID>, REF : CompositeEntity<*, *>, T: Iterable<SRC>> T.with(vararg relations: KProperty1<out REF, Any?>): T = apply {
     toList().preloadRelations(*relations)
 }
 
-fun <CID : Comparable<CID>, SRCID : Comparable<SRCID>, SRC: CompositeEntity<CID, SRCID>> SRC.load(vararg relations: KProperty1<out CompositeEntity<*, *>, Any?>): SRC = apply {
+fun <ClassifierID : Comparable<ClassifierID>, SRClassifierID : Comparable<SRClassifierID>, SRC: CompositeEntity<ClassifierID, SRClassifierID>> SRC.load(vararg relations: KProperty1<out CompositeEntity<*, *>, Any?>): SRC = apply {
     listOf(this).with(*relations)
 }

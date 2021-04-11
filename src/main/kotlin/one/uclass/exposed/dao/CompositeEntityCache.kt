@@ -6,10 +6,10 @@ import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.transactions.transactionScope
 import java.util.*
 
-val Transaction.entityCache : EntityCache by transactionScope { EntityCache(this) }
+val Transaction.compositeEntityCache : CompositeEntityCache by transactionScope { CompositeEntityCache(this) }
 
 @Suppress("UNCHECKED_CAST")
-class EntityCache(private val transaction: Transaction) {
+class CompositeEntityCache(private val transaction: Transaction) {
     private var flushingEntities = false
     val data = LinkedHashMap<CompositeIdTable<*, *>, MutableMap<Pair<Any, Any>, CompositeEntity<*, *>>>()
     val inserts = LinkedHashMap<CompositeIdTable<*, *>, MutableList<CompositeEntity<*, *>>>()
@@ -21,14 +21,14 @@ class EntityCache(private val transaction: Transaction) {
         LinkedHashMap()
     }
 
-    fun <CID: Any, GID: Any, R: CompositeEntity<CID, GID>> getOrPutReferrers(sourceId: CompositeEntityID<*, *>, key: Column<*>, refs: ()-> SizedIterable<R>): SizedIterable<R> =
+    fun <ClassifierID: Any, ID: Any, R: CompositeEntity<ClassifierID, ID>> getOrPutReferrers(sourceId: CompositeEntityID<*, *>, key: Column<*>, refs: ()-> SizedIterable<R>): SizedIterable<R> =
             referrers.getOrPut(sourceId){ HashMap() }.getOrPut(key) { LazySizedCollection(refs()) } as SizedIterable<R>
 
-    fun <CID:Comparable<CID>, GID:Comparable<GID>, T: CompositeEntity<CID, GID>> find(f: CompositeEntityClass<CID, GID, T>, id: CompositeEntityID<CID, GID>): T? = getMap(f)[id.pair] as T? ?: inserts[f.table]?.firstOrNull { it.id == id } as? T
+    fun <ClassifierID:Comparable<ClassifierID>, ID:Comparable<ID>, T: CompositeEntity<ClassifierID, ID>> find(f: CompositeEntityClass<ClassifierID, ID, T>, id: CompositeEntityID<ClassifierID, ID>): T? = getMap(f)[id.pair] as T? ?: inserts[f.table]?.firstOrNull { it.id == id } as? T
 
-    fun <CID:Comparable<CID>, GID:Comparable<GID>, T: CompositeEntity<CID, GID>> findAll(f: CompositeEntityClass<CID, GID, T>): Collection<T> = getMap(f).values as Collection<T>
+    fun <ClassifierID:Comparable<ClassifierID>, ID:Comparable<ID>, T: CompositeEntity<ClassifierID, ID>> findAll(f: CompositeEntityClass<ClassifierID, ID, T>): Collection<T> = getMap(f).values as Collection<T>
 
-    fun <CID:Comparable<CID>, GID:Comparable<GID>, T: CompositeEntity<CID, GID>> store(f: CompositeEntityClass<CID, GID, T>, o: T) {
+    fun <ClassifierID:Comparable<ClassifierID>, ID:Comparable<ID>, T: CompositeEntity<ClassifierID, ID>> store(f: CompositeEntityClass<ClassifierID, ID, T>, o: T) {
         getMap(f)[o.id.pair] = o
     }
 
@@ -36,11 +36,11 @@ class EntityCache(private val transaction: Transaction) {
         getMap(o.klass.table)[o.id.pair] = o
     }
 
-    fun <CID:Comparable<CID>, GID:Comparable<GID>, T: CompositeEntity<CID, GID>> remove(table: CompositeIdTable<CID, GID>, o: T) {
+    fun <ClassifierID:Comparable<ClassifierID>, ID:Comparable<ID>, T: CompositeEntity<ClassifierID, ID>> remove(table: CompositeIdTable<ClassifierID, ID>, o: T) {
         getMap(table).remove(o.id.pair)
     }
 
-    fun <CID:Comparable<CID>, GID:Comparable<GID>, T: CompositeEntity<CID, GID>> scheduleInsert(f: CompositeEntityClass<CID, GID, T>, o: T) {
+    fun <ClassifierID:Comparable<ClassifierID>, ID:Comparable<ID>, T: CompositeEntity<ClassifierID, ID>> scheduleInsert(f: CompositeEntityClass<ClassifierID, ID, T>, o: T) {
         inserts.getOrPut(f.table) { arrayListOf() }.add(o as CompositeEntity<*, *>)
     }
 
@@ -52,7 +52,7 @@ class EntityCache(private val transaction: Transaction) {
         data[idTable]?.let { map ->
             if (map.isNotEmpty()) {
                 val updatedEntities = HashSet<CompositeEntity<*, *>>()
-                val batch = EntityBatchUpdate(map.values.first().klass)
+                val batch = CompositeEntityBatchUpdate(map.values.first().klass)
                 for ((_, entity) in map) {
                     if (entity.flush(batch)) {
                         check(entity.klass !is ImmutableEntityClass<*, *, *>) { "Update on immutable entity ${entity.javaClass.simpleName} ${entity.id}" }
@@ -108,14 +108,14 @@ class EntityCache(private val transaction: Transaction) {
     internal fun flushInserts(table: CompositeIdTable<*, *>) {
         inserts.remove(table)?.let {
             it.forEach { entry ->
-                entry.writeValues[entry.klass.table.constId as Column<Any?>] = entry.id.constId
+                entry.writeValues[entry.klass.table.classifierId as Column<Any?>] = entry.id.classifierId
             }
             var toFlush: List<CompositeEntity<*, *>> = it
             do {
                 val partition = toFlush.partition {
                     it.writeValues.none {
                         val (key, value) = it
-                        key.referee == table.genId && value is CompositeEntityID<*, *> && value._genId._value == null
+                        key.referee == table.id && value is CompositeEntityID<*, *> && value._idPart._value == null
                     }
                 }
                 toFlush = partition.first
@@ -126,11 +126,11 @@ class EntityCache(private val transaction: Transaction) {
                 }
 
                 for ((entry, genValues) in toFlush.zip(ids)) {
-                    entry.writeValues[entry.klass.table.constId as Column<Any?>] = entry.id.constId
-                    if (entry.id._genId._value == null) {
-                        val id = genValues[table.genId]
-                        entry.id._genId._value = id._value
-                        entry.writeValues[entry.klass.table.genId as Column<Any?>] = id
+                    entry.writeValues[entry.klass.table.classifierId as Column<Any?>] = entry.id.classifierId
+                    if (entry.id._idPart._value == null) {
+                        val id = genValues[table.id]
+                        entry.id._idPart._value = id._value
+                        entry.writeValues[entry.klass.table.id as Column<Any?>] = id
                     }
                     genValues.fieldIndex.keys.forEach { key ->
                         entry.writeValues[key as Column<Any?>] = genValues[key]
@@ -160,7 +160,7 @@ class EntityCache(private val transaction: Transaction) {
 }
 
 fun Transaction.flushCache(): List<CompositeEntity<*, *>> {
-    with(entityCache) {
+    with(compositeEntityCache) {
         val newEntities = inserts.flatMap { it.value }
         flush()
         return newEntities

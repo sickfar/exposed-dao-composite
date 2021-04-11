@@ -1,13 +1,13 @@
 package one.uclass.exposed.dao.id.composite
 
-open class CompositeIDGenPart<Gen : Comparable<Gen>> protected constructor(
-    val table: CompositeIdTable<*, Gen>,
-    genId: Gen?
-) : Comparable<CompositeIDGenPart<Gen>> {
-    constructor(genId: Gen?, table: CompositeIdTable<*, Gen>) : this(table, genId)
+open class CompositeEntityIdPart<ID : Comparable<ID>> protected constructor(
+    val table: CompositeIdTable<*, ID>,
+    id: ID?
+) : Comparable<CompositeEntityIdPart<ID>> {
+    constructor(id: ID?, table: CompositeIdTable<*, ID>) : this(table, id)
 
-    var _value: Any? = genId
-    val value: Gen
+    var _value: Any? = id
+    val value: ID
         get() {
             if (_value == null) {
                 invokeOnNoValue()
@@ -15,7 +15,7 @@ open class CompositeIDGenPart<Gen : Comparable<Gen>> protected constructor(
             }
 
             @Suppress("UNCHECKED_CAST")
-            return _value as Gen
+            return _value as ID
         }
 
     protected open fun invokeOnNoValue() {}
@@ -25,36 +25,36 @@ open class CompositeIDGenPart<Gen : Comparable<Gen>> protected constructor(
     override fun hashCode() = value.hashCode()
 
     override fun equals(other: Any?): Boolean {
-        if (other !is CompositeIDGenPart<*>) return false
+        if (other !is CompositeEntityIdPart<*>) return false
 
         return other._value == _value && other.table == table
     }
 
-    override fun compareTo(other: CompositeIDGenPart<Gen>): Int = value.compareTo(value)
+    override fun compareTo(other: CompositeEntityIdPart<ID>): Int = value.compareTo(value)
 }
 
-open class CompositeEntityID<Const : Comparable<Const>, Gen : Comparable<Gen>> constructor(
-    val constId: Const, genId: CompositeIDGenPart<Gen>
-) : Comparable<CompositeEntityID<Const, Gen>> {
+open class CompositeEntityID<ClassifierID : Comparable<ClassifierID>, ID : Comparable<ID>> constructor(
+    val classifierId: ClassifierID, idPart: CompositeEntityIdPart<ID>
+) : Comparable<CompositeEntityID<ClassifierID, ID>> {
 
-    val _genId = genId
+    val _idPart = idPart
 
-    val genId: Gen get() = _genId.value
+    val id: ID get() = _idPart.value
 
-    val pair: Pair<Const, Gen> get() = Pair(constId, genId)
+    val pair: Pair<ClassifierID, ID> get() = Pair(classifierId, id)
 
     @Suppress("UNCHECKED_CAST")
-    val table: CompositeIdTable<Const, Gen>
-        get() = _genId.table as CompositeIdTable<Const, Gen>
+    val table: CompositeIdTable<ClassifierID, ID>
+        get() = _idPart.table as CompositeIdTable<ClassifierID, ID>
 
-    override fun toString() = "constId=${constId} genId=${genId}"
+    override fun toString() = "classifierId=${classifierId} id=${id}"
 
-    override fun compareTo(other: CompositeEntityID<Const, Gen>): Int =
-        constId.compareTo(other.constId) - genId.compareTo(other.genId)
+    override fun compareTo(other: CompositeEntityID<ClassifierID, ID>): Int =
+        classifierId.compareTo(other.classifierId) - id.compareTo(other.id)
 
     override fun hashCode(): Int {
-        var result = constId.hashCode()
-        result = 31 * result + genId.hashCode()
+        var result = classifierId.hashCode()
+        result = 31 * result + id.hashCode()
         return result
     }
 
@@ -66,8 +66,8 @@ open class CompositeEntityID<Const : Comparable<Const>, Gen : Comparable<Gen>> c
         }
         other as CompositeEntityID<*, *>
 
-        if (constId != other.constId) return false
-        if (genId != other.genId) return false
+        if (classifierId != other.classifierId) return false
+        if (id != other.id) return false
 
         return true
     }

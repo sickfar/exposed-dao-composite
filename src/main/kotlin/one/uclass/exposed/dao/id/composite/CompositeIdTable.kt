@@ -7,35 +7,35 @@ import org.jetbrains.exposed.sql.vendors.SQLiteDialect
 import org.jetbrains.exposed.sql.vendors.currentDialect
 import java.util.*
 
-class ComplexEntityIDGenPartColumnType<T : Comparable<T>>(val genIdColumn: Column<T>) : ColumnType() {
+class ComplexEntityIDGenPartColumnType<T : Comparable<T>>(val idColumn: Column<T>) : ColumnType() {
 
     init {
-        require(genIdColumn.table is CompositeIdTable<*, *>) { "CompositeIDGenPart supported only for CompositeIdTable" }
+        require(idColumn.table is CompositeIdTable<*, *>) { "CompositeIDGenPart supported only for CompositeIdTable" }
     }
 
-    override fun sqlType(): String = genIdColumn.columnType.sqlType()
+    override fun sqlType(): String = idColumn.columnType.sqlType()
 
-    override fun notNullValueToDB(value: Any): Any = genIdColumn.columnType.notNullValueToDB(
+    override fun notNullValueToDB(value: Any): Any = idColumn.columnType.notNullValueToDB(
         when (value) {
-            is CompositeIDGenPart<*> -> value.value
+            is CompositeEntityIdPart<*> -> value.value
             else -> value
         }
     )
 
-    override fun nonNullValueToString(value: Any): String = genIdColumn.columnType.nonNullValueToString(
+    override fun nonNullValueToString(value: Any): String = idColumn.columnType.nonNullValueToString(
         when (value) {
-            is CompositeIDGenPart<*> -> value.value
+            is CompositeEntityIdPart<*> -> value.value
             else -> value
         }
     )
 
     @Suppress("UNCHECKED_CAST")
-    override fun valueFromDB(value: Any): CompositeIDGenPart<T> = CompositeEntityIDFunctionProvider.createEntityID(
+    override fun valueFromDB(value: Any): CompositeEntityIdPart<T> = CompositeEntityIDFunctionProvider.createEntityID(
         when (value) {
-            is CompositeIDGenPart<*> -> value.value as T
-            else -> genIdColumn.columnType.valueFromDB(value) as T
+            is CompositeEntityIdPart<*> -> value.value as T
+            else -> idColumn.columnType.valueFromDB(value) as T
         },
-        genIdColumn.table as CompositeIdTable<*, T>
+        idColumn.table as CompositeIdTable<*, T>
     )
 
     override fun equals(other: Any?): Boolean {
@@ -44,16 +44,16 @@ class ComplexEntityIDGenPartColumnType<T : Comparable<T>>(val genIdColumn: Colum
 
         other as ComplexEntityIDGenPartColumnType<*>
 
-        if (genIdColumn != other.genIdColumn) return false
+        if (idColumn != other.idColumn) return false
 
         return true
     }
 
-    override fun hashCode(): Int = 31 * super.hashCode() + genIdColumn.hashCode()
+    override fun hashCode(): Int = 31 * super.hashCode() + idColumn.hashCode()
 }
 
 interface CompositeEntityIDFactory {
-    fun <T : Comparable<T>> createEntityID(genId: T, table: CompositeIdTable<*, T>): CompositeIDGenPart<T>
+    fun <T : Comparable<T>> createEntityID(id: T, table: CompositeIdTable<*, T>): CompositeEntityIdPart<T>
 }
 
 object CompositeEntityIDFunctionProvider {
@@ -61,13 +61,13 @@ object CompositeEntityIDFunctionProvider {
         ServiceLoader.load(CompositeEntityIDFactory::class.java, CompositeEntityIDFactory::class.java.classLoader)
             .firstOrNull()
             ?: object : CompositeEntityIDFactory {
-                override fun <T : Comparable<T>> createEntityID(genId: T, table: CompositeIdTable<*, T>) =
-                    CompositeIDGenPart(genId, table)
+                override fun <T : Comparable<T>> createEntityID(id: T, table: CompositeIdTable<*, T>) =
+                    CompositeEntityIdPart(id, table)
             }
 
     @Suppress("UNCHECKED_CAST")
-    fun <T : Comparable<T>> createEntityID(genId: T, table: CompositeIdTable<*, T>) =
-        factory.createEntityID(genId, table)
+    fun <T : Comparable<T>> createEntityID(id: T, table: CompositeIdTable<*, T>) =
+        factory.createEntityID(id, table)
 }
 
 private val ForeignKeyConstraint.foreignKeyPart: String
@@ -95,14 +95,14 @@ private fun Column<*>.isOneColumnPK(): Boolean = table.primaryKey?.columns?.sing
  *
  * @param name table name, by default name will be resolved from a class name with "Table" suffix removed (if present)
  */
-abstract class CompositeIdTable<Const : Comparable<Const>, Gen : Comparable<Gen>>(name: String = "") : Table(name) {
-    abstract val constId: Column<Const>
-    abstract val genId: Column<CompositeIDGenPart<Gen>>
+abstract class CompositeIdTable<ClassifierID : Comparable<ClassifierID>, ID : Comparable<ID>>(name: String = "") : Table(name) {
+    abstract val classifierId: Column<ClassifierID>
+    abstract val id: Column<CompositeEntityIdPart<ID>>
 
     /** Converts the @receiver column to an [EntityID] column. */
     @Suppress("UNCHECKED_CAST")
-    fun <T : Comparable<T>> Column<T>.compositeIdGenComponent(): Column<CompositeIDGenPart<T>> {
-        val newColumn = Column<CompositeIDGenPart<T>>(table, name, ComplexEntityIDGenPartColumnType(this)).also {
+    fun <T : Comparable<T>> Column<T>.compositeIdPart(): Column<CompositeEntityIdPart<T>> {
+        val newColumn = Column<CompositeEntityIdPart<T>>(table, name, ComplexEntityIDGenPartColumnType(this)).also {
             it.indexInPK = indexInPK
             it.defaultValueFun = defaultValueFun?.let {
                 {
@@ -117,13 +117,13 @@ abstract class CompositeIdTable<Const : Comparable<Const>, Gen : Comparable<Gen>
     }
 
     @Suppress("UNCHECKED_CAST")
-    val compositeIdColumnsExpression: BiCompositeColumn<Const, CompositeIDGenPart<Gen>, CompositeEntityID<Const, Gen>>
+    val compositeIdColumnsExpression: BiCompositeColumn<ClassifierID, CompositeEntityIdPart<ID>, CompositeEntityID<ClassifierID, ID>>
         get() = object :
-            BiCompositeColumn<Const, CompositeIDGenPart<Gen>, CompositeEntityID<Const, Gen>>(
-                constId,
-                genId,
-                { Pair(it.constId, it._genId) },
-                { o1, o2 -> CompositeEntityID(o1 as Const, CompositeIDGenPart(o2 as Gen, this@CompositeIdTable)) }) {}
+            BiCompositeColumn<ClassifierID, CompositeEntityIdPart<ID>, CompositeEntityID<ClassifierID, ID>>(
+                classifierId,
+                id,
+                { Pair(it.classifierId, it._idPart) },
+                { o1, o2 -> CompositeEntityID(o1 as ClassifierID, CompositeEntityIdPart(o2 as ID, this@CompositeIdTable)) }) {}
 
     private fun isCustomPKNameDefined(): Boolean = primaryKey?.let { it.name != "pk_$tableName" } == true
 
@@ -148,8 +148,8 @@ abstract class CompositeIdTable<Const : Comparable<Const>, Gen : Comparable<Gen>
             if (it.target.table is CompositeIdTable<*, *>) {
                 val targetCompositeTable = it.target.table as CompositeIdTable<*, *>
                 CompositeForeignKeyConstraint(
-                    target = listOf(targetCompositeTable.constId, it.target),
-                    from = listOf(constId, it.from),
+                    target = listOf(targetCompositeTable.classifierId, it.target),
+                    from = listOf(classifierId, it.from),
                     onUpdate = it.updateRule,
                     onDelete = it.deleteRule,
                     null
@@ -204,10 +204,10 @@ abstract class CompositeIdTable<Const : Comparable<Const>, Gen : Comparable<Gen>
  */
 open class IntIntIdTable(name: String = "", primaryColumnName: String, secondaryColumnName: String) :
     CompositeIdTable<Int, Int>(name) {
-    override val constId: Column<Int> = integer(primaryColumnName)
-    override val genId: Column<CompositeIDGenPart<Int>> =
-        integer(secondaryColumnName).compositeIdGenComponent().autoIncrement()
-    override val primaryKey by lazy { super.primaryKey ?: PrimaryKey(constId, genId) }
+    override val classifierId: Column<Int> = integer(primaryColumnName)
+    override val id: Column<CompositeEntityIdPart<Int>> =
+        integer(secondaryColumnName).compositeIdPart().autoIncrement()
+    override val primaryKey by lazy { super.primaryKey ?: PrimaryKey(classifierId, id) }
 }
 
 /**
@@ -216,10 +216,10 @@ open class IntIntIdTable(name: String = "", primaryColumnName: String, secondary
  * @param name table name, by default name will be resolved from a class name with "Table" suffix removed (if present)
  * @param columnName name for a primary key, "id" by default
  */
-open class LongLongIdTable(name: String = "", primaryColumnName: String, secondaryColumnName: String) :
+open class LongLonIDTable(name: String = "", primaryColumnName: String, secondaryColumnName: String) :
     CompositeIdTable<Long, Long>(name) {
-    override val constId: Column<Long> = long(primaryColumnName)//.entityId()
-    override val genId: Column<CompositeIDGenPart<Long>> =
-        long(secondaryColumnName).compositeIdGenComponent().autoIncrement()
-    override val primaryKey by lazy { super.primaryKey ?: PrimaryKey(constId, genId) }
+    override val classifierId: Column<Long> = long(primaryColumnName)//.entityId()
+    override val id: Column<CompositeEntityIdPart<Long>> =
+        long(secondaryColumnName).compositeIdPart().autoIncrement()
+    override val primaryKey by lazy { super.primaryKey ?: PrimaryKey(classifierId, id) }
 }

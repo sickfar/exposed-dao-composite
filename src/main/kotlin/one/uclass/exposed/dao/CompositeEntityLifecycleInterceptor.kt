@@ -14,19 +14,19 @@ class CompositeEntityLifecycleInterceptor : GlobalStatementInterceptor {
 
             is DeleteStatement -> {
                 transaction.flushCache()
-                transaction.entityCache.removeTablesReferrers(listOf(statement.table))
+                transaction.compositeEntityCache.removeTablesReferrers(listOf(statement.table))
             }
 
             is InsertStatement<*> -> {
                 transaction.flushCache()
-                transaction.entityCache.removeTablesReferrers(listOf(statement.table))
+                transaction.compositeEntityCache.removeTablesReferrers(listOf(statement.table))
             }
 
-            is BatchUpdateStatement -> {}
+            is CompositeBatchUpdateStatement -> {}
 
             is UpdateStatement -> {
                 transaction.flushCache()
-                transaction.entityCache.removeTablesReferrers(statement.targetsSet.targetTables())
+                transaction.compositeEntityCache.removeTablesReferrers(statement.targetsSet.targetTables())
             }
 
             else -> {
@@ -40,11 +40,11 @@ class CompositeEntityLifecycleInterceptor : GlobalStatementInterceptor {
         val created = transaction.flushCache()
         transaction.alertSubscribers()
         val createdByHooks = transaction.flushCache()
-        EntityCache.invalidateGlobalCaches(created + createdByHooks)
+        CompositeEntityCache.invalidateGlobalCaches(created + createdByHooks)
     }
 
     override fun beforeRollback(transaction: Transaction) {
-        val entityCache = transaction.entityCache
+        val entityCache = transaction.compositeEntityCache
         entityCache.clearReferrersCache()
         entityCache.data.clear()
         entityCache.inserts.clear()
@@ -53,6 +53,6 @@ class CompositeEntityLifecycleInterceptor : GlobalStatementInterceptor {
     private fun Transaction.flushEntities(query: Query) {
         // Flush data before executing query or results may be unpredictable
         val tables = query.targets.filterIsInstance(CompositeIdTable::class.java).toSet()
-        entityCache.flush(tables)
+        compositeEntityCache.flush(tables)
     }
 }

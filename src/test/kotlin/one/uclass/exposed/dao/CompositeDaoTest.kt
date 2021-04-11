@@ -35,21 +35,21 @@ class CompositeDaoTest {
                 data = "testData"
             }
         }
-        assertNotEquals(0L, base.id.genId)
+        assertNotEquals(0L, base.id.id)
         val list = transaction {
             ListEntity.new(1L) {
                 value = "testValue"
             }
         }
-        assertNotEquals(0L, list.id.genId)
+        assertNotEquals(0L, list.id.id)
         val referenced = transaction {
             ReferencedEntity.new(1L) {
                 this.base = base
                 data = "testData"
             }
         }
-        assertEquals(1L, referenced.id.constId)
-        assertNotEquals(0L, referenced.id.genId)
+        assertEquals(1L, referenced.id.classifierId)
+        assertNotEquals(0L, referenced.id.id)
     }
 
     @Test
@@ -70,17 +70,17 @@ class CompositeDaoTest {
                 data = "testData"
             }
         }
-        assumeFalse(0L == base.id.genId)
-        assumeFalse(0L == referenced.id.genId)
-        assumeFalse(0L == list.id.genId)
+        assumeFalse(0L == base.id.id)
+        assumeFalse(0L == referenced.id.id)
+        assumeFalse(0L == list.id.id)
         transaction {
-            val selectedBase = BaseEntity.findById(1L, base.id.genId)?.load(BaseEntity::list)
+            val selectedBase = BaseEntity.findById(1L, base.id.id)?.load(BaseEntity::list)
             assertNotNull(selectedBase)
             assertFalse(selectedBase!!.list.empty())
             assertEquals(list.id, selectedBase.list.first().id)
         }
         transaction {
-            val selectedReferenced = ReferencedEntity.findById(1L, referenced.id.genId)?.load(ReferencedEntity::base)
+            val selectedReferenced = ReferencedEntity.findById(1L, referenced.id.id)?.load(ReferencedEntity::base)
             assertNotNull(selectedReferenced)
             assertEquals(base.id, selectedReferenced!!.base.id)
         }
