@@ -5,9 +5,12 @@ import com.zaxxer.hikari.HikariDataSource
 import org.jetbrains.exposed.sql.Database
 import org.jetbrains.exposed.sql.SchemaUtils
 import org.jetbrains.exposed.sql.transactions.transaction
-import org.junit.jupiter.api.*
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Assumptions.assumeFalse
+import org.junit.jupiter.api.BeforeAll
+import org.junit.jupiter.api.Order
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.TestInstance
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class CompositeDaoTest {
@@ -23,7 +26,7 @@ class CompositeDaoTest {
         hikariConfig.password = "test"
         database = Database.connect(HikariDataSource(hikariConfig))
         transaction {
-            SchemaUtils.create(BaseCompositeTable, ReferencedCompositeTable, BackReferencedCompositeTable)
+            SchemaUtils.create(BaseCompositeTable, ReferencedCompositeTable, BackReferencedCompositeTable, EnumTable)
         }
     }
 
@@ -84,6 +87,21 @@ class CompositeDaoTest {
             assertNotNull(selectedReferenced)
             assertEquals(base.id, selectedReferenced!!.base.id)
         }
+    }
+
+    @Test
+    fun testEnumKey() {
+        val entityOne = transaction {
+            EnumEntity.new(1, IdEnum.VALUE_ONE) {
+                value = "test"
+            }
+        }
+        assertEquals(IdEnum.VALUE_ONE, entityOne.id.id)
+        val foundEntity = transaction {
+            EnumEntity.findById(1, IdEnum.VALUE_ONE)
+        }
+        assertNotNull(foundEntity)
+        assertEquals(IdEnum.VALUE_ONE, foundEntity!!.id.id)
     }
 
 }

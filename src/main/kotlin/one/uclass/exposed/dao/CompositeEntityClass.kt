@@ -117,7 +117,7 @@ abstract class CompositeEntityClass<ClassifierID : Comparable<ClassifierID>, ID 
 
     @Suppress("MemberVisibilityCanBePrivate")
     fun wrapRow(row: ResultRow): T {
-        val entity = wrap(row[table.compositeIdColumnsExpression], row)
+        val entity = wrap(row[table.compositeIdExpression], row)
         if (entity._readValues == null)
             entity._readValues = row
 
