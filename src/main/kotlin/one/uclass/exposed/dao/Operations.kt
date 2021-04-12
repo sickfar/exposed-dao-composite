@@ -1,6 +1,6 @@
 package one.uclass.exposed.dao
 
-import one.uclass.exposed.dao.id.composite.ComplexEntityIDGenPartColumnType
+import one.uclass.exposed.dao.id.composite.CompositeEntityIdPartColumnType
 import one.uclass.exposed.dao.id.composite.CompositeEntityIdPart
 import one.uclass.exposed.dao.id.composite.CompositeIdTable
 import org.jetbrains.exposed.sql.*
@@ -29,9 +29,9 @@ infix fun <T : Comparable<T>, E : CompositeEntityIdPart<T>?> ExpressionWithColum
     }
     @Suppress("UNCHECKED_CAST")
     val table = if (columnType is AutoIncColumnType) {
-        ((columnType as AutoIncColumnType).delegate as ComplexEntityIDGenPartColumnType<*>).idColumn.table as CompositeIdTable<*, T>
-    } else if (columnType is ComplexEntityIDGenPartColumnType<*>) {
-        (columnType as ComplexEntityIDGenPartColumnType<*>).idColumn.table as CompositeIdTable<*, T>
+        ((columnType as AutoIncColumnType).delegate as CompositeEntityIdPartColumnType<*>).idColumn.table as CompositeIdTable<*, T>
+    } else if (columnType is CompositeEntityIdPartColumnType<*>) {
+        (columnType as CompositeEntityIdPartColumnType<*>).idColumn.table as CompositeIdTable<*, T>
     } else {
         throw IllegalStateException("Unsupported column type")
     }

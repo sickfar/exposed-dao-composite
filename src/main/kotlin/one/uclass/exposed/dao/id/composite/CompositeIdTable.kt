@@ -7,7 +7,7 @@ import org.jetbrains.exposed.sql.vendors.SQLiteDialect
 import org.jetbrains.exposed.sql.vendors.currentDialect
 import java.util.*
 
-class ComplexEntityIDGenPartColumnType<T : Comparable<T>>(val idColumn: Column<T>) : ColumnType() {
+class CompositeEntityIdPartColumnType<T : Comparable<T>>(val idColumn: Column<T>) : ColumnType() {
 
     init {
         require(idColumn.table is CompositeIdTable<*, *>) { "CompositeIDGenPart supported only for CompositeIdTable" }
@@ -17,6 +17,7 @@ class ComplexEntityIDGenPartColumnType<T : Comparable<T>>(val idColumn: Column<T
 
     override fun notNullValueToDB(value: Any): Any = idColumn.columnType.notNullValueToDB(
         when (value) {
+            is CompositeEntityID<*, *> -> value.id
             is CompositeEntityIdPart<*> -> value.value
             else -> value
         }
@@ -24,6 +25,7 @@ class ComplexEntityIDGenPartColumnType<T : Comparable<T>>(val idColumn: Column<T
 
     override fun nonNullValueToString(value: Any): String = idColumn.columnType.nonNullValueToString(
         when (value) {
+            is CompositeEntityID<*, *> -> value.id
             is CompositeEntityIdPart<*> -> value.value
             else -> value
         }
@@ -32,6 +34,7 @@ class ComplexEntityIDGenPartColumnType<T : Comparable<T>>(val idColumn: Column<T
     @Suppress("UNCHECKED_CAST")
     override fun valueFromDB(value: Any): CompositeEntityIdPart<T> = CompositeEntityIDFunctionProvider.createEntityID(
         when (value) {
+            is CompositeEntityID<*, *> -> value._idPart as T
             is CompositeEntityIdPart<*> -> value.value as T
             else -> idColumn.columnType.valueFromDB(value) as T
         },
@@ -42,7 +45,7 @@ class ComplexEntityIDGenPartColumnType<T : Comparable<T>>(val idColumn: Column<T
         if (this === other) return true
         if (javaClass != other?.javaClass) return false
 
-        other as ComplexEntityIDGenPartColumnType<*>
+        other as CompositeEntityIdPartColumnType<*>
 
         if (idColumn != other.idColumn) return false
 
@@ -95,14 +98,15 @@ private fun Column<*>.isOneColumnPK(): Boolean = table.primaryKey?.columns?.sing
  *
  * @param name table name, by default name will be resolved from a class name with "Table" suffix removed (if present)
  */
-abstract class CompositeIdTable<ClassifierID : Comparable<ClassifierID>, ID : Comparable<ID>>(name: String = "") : Table(name) {
+abstract class CompositeIdTable<ClassifierID : Comparable<ClassifierID>, ID : Comparable<ID>>(name: String = "") :
+    Table(name) {
     abstract val classifierId: Column<ClassifierID>
     abstract val id: Column<CompositeEntityIdPart<ID>>
 
     /** Converts the @receiver column to an [EntityID] column. */
     @Suppress("UNCHECKED_CAST")
     fun <T : Comparable<T>> Column<T>.compositeIdPart(): Column<CompositeEntityIdPart<T>> {
-        val newColumn = Column<CompositeEntityIdPart<T>>(table, name, ComplexEntityIDGenPartColumnType(this)).also {
+        val newColumn = Column<CompositeEntityIdPart<T>>(table, name, CompositeEntityIdPartColumnType(this)).also {
             it.indexInPK = indexInPK
             it.defaultValueFun = defaultValueFun?.let {
                 {
@@ -117,13 +121,20 @@ abstract class CompositeIdTable<ClassifierID : Comparable<ClassifierID>, ID : Co
     }
 
     @Suppress("UNCHECKED_CAST")
-    val compositeIdColumnsExpression: BiCompositeColumn<ClassifierID, CompositeEntityIdPart<ID>, CompositeEntityID<ClassifierID, ID>>
+    val compositeIdExpression: BiCompositeColumn<ClassifierID, CompositeEntityIdPart<ID>, CompositeEntityID<ClassifierID, ID>>
         get() = object :
             BiCompositeColumn<ClassifierID, CompositeEntityIdPart<ID>, CompositeEntityID<ClassifierID, ID>>(
                 classifierId,
                 id,
                 { Pair(it.classifierId, it._idPart) },
-                { o1, o2 -> CompositeEntityID(o1 as ClassifierID, CompositeEntityIdPart(o2 as ID, this@CompositeIdTable)) }) {}
+                { o1, o2 ->
+                    CompositeEntityID(
+                        o1 as ClassifierID,
+                        o2?.let { id.columnType.valueFromDB(it) as CompositeEntityIdPart<ID> } ?: CompositeEntityIdPart(
+                            null,
+                            this@CompositeIdTable
+                        ))
+                }) {}
 
     private fun isCustomPKNameDefined(): Boolean = primaryKey?.let { it.name != "pk_$tableName" } == true
 

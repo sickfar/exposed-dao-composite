@@ -47,7 +47,7 @@ open class CompositeEntityID<ClassifierID : Comparable<ClassifierID>, ID : Compa
     val table: CompositeIdTable<ClassifierID, ID>
         get() = _idPart.table as CompositeIdTable<ClassifierID, ID>
 
-    override fun toString() = "classifierId=${classifierId} id=${id}"
+    override fun toString() = "CompositeEntityID(classifierId=$classifierId, id=$id)"
 
     override fun compareTo(other: CompositeEntityID<ClassifierID, ID>): Int =
         classifierId.compareTo(other.classifierId) - id.compareTo(other.id)
