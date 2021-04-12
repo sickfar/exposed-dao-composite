@@ -34,7 +34,7 @@ class CompositeEntityIdPartColumnType<T : Comparable<T>>(val idColumn: Column<T>
     @Suppress("UNCHECKED_CAST")
     override fun valueFromDB(value: Any): CompositeEntityIdPart<T> = CompositeEntityIDFunctionProvider.createEntityID(
         when (value) {
-            is CompositeEntityID<*, *> -> value._idPart as T
+            is CompositeEntityID<*, *> -> value.id as T
             is CompositeEntityIdPart<*> -> value.value as T
             else -> idColumn.columnType.valueFromDB(value) as T
         },

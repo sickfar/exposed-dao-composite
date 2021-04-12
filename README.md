@@ -4,7 +4,7 @@ Exposed extension to add limited support of composite primary and foreign keys.
 Based on exposed-dao source code with added support of composite primary keys.
 
 ## Installation
-Use in you maven or gragle project
+Use in you maven or gradle project
 
 ```xml
 <repositories>
@@ -13,12 +13,12 @@ Use in you maven or gragle project
         <url>https://gitlab.com/api/v4/projects/25805171/packages/maven</url>
     </repository>
 </repositories>
-
+...
 <dependencies>
     <dependency>
         <groupId>one.uclass.exposed</groupId>
         <artifactId>exposed-dao-composite</artifactId>
-        <version>0.1.1</version>
+        <version>0.1.3</version>
     </dependency>
 </dependencies>
 ```
