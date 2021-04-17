@@ -57,8 +57,8 @@ class CompositeEntityIdPartColumnType<T : Comparable<T>>(val idColumn: Column<T>
 }
 
 @Suppress("UNCHECKED_CAST")
-@JvmName("inListCompositeIds")
-infix fun <T : Comparable<T>> Column<CompositeEntityIdPart<T>>.inListComposite(list: Iterable<T>): InListOrNotInListOp<CompositeEntityIdPart<T>> {
+@JvmName("compositeIdInList")
+infix fun <T : Comparable<T>> Column<CompositeEntityIdPart<T>>.inList(list: Iterable<T>): InListOrNotInListOp<CompositeEntityIdPart<T>> {
     fun <T> ExpressionWithColumnType<T>.inList(list: Iterable<T>): InListOrNotInListOp<T> =
         InListOrNotInListOp(this, list, isInList = true)
 
@@ -67,8 +67,8 @@ infix fun <T : Comparable<T>> Column<CompositeEntityIdPart<T>>.inListComposite(l
 }
 
 @Suppress("UNCHECKED_CAST")
-@JvmName("inListOptCompositeIds")
-infix fun <T : Comparable<T>> Column<CompositeEntityIdPart<T>?>.inListOptComposite(list: Iterable<T>): InListOrNotInListOp<CompositeEntityIdPart<T>?> {
+@JvmName("optCompositeIdInList")
+infix fun <T : Comparable<T>> Column<CompositeEntityIdPart<T>?>.inListOpt(list: Iterable<T>): InListOrNotInListOp<CompositeEntityIdPart<T>?> {
     fun <T> ExpressionWithColumnType<T>.inList(list: Iterable<T>): InListOrNotInListOp<T> =
         InListOrNotInListOp(this, list, isInList = true)
 
