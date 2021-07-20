@@ -23,11 +23,11 @@ maven-build:
     - mvn clean install
   artifacts:
     paths:
-      - exposed-dao-composite/target/exposed-dao-composite-*.jar
+      - target/exposed-dao-composite-*.jar
     expire_in: 1 day
     reports:
       junit:
-        - exposed-dao-composite/target/surefire-reports/TEST-*.xml
+        - target/surefire-reports/TEST-*.xml
 
 deploy:
   cache:

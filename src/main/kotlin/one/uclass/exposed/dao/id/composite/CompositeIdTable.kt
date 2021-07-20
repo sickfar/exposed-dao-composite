@@ -1,5 +1,6 @@
 package one.uclass.exposed.dao.id.composite
 
+import org.jetbrains.exposed.dao.id.EntityID
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.transactions.TransactionManager
 import org.jetbrains.exposed.sql.vendors.OracleDialect
@@ -53,6 +54,26 @@ class CompositeEntityIdPartColumnType<T : Comparable<T>>(val idColumn: Column<T>
     }
 
     override fun hashCode(): Int = 31 * super.hashCode() + idColumn.hashCode()
+}
+
+@Suppress("UNCHECKED_CAST")
+@JvmName("compositeIdInList")
+infix fun <T : Comparable<T>> Column<CompositeEntityIdPart<T>>.inList(list: Iterable<T>): InListOrNotInListOp<CompositeEntityIdPart<T>> {
+    fun <T> ExpressionWithColumnType<T>.inList(list: Iterable<T>): InListOrNotInListOp<T> =
+        InListOrNotInListOp(this, list, isInList = true)
+
+    val idTable = (columnType as CompositeEntityIdPartColumnType<T>).idColumn.table as CompositeIdTable<*, T>
+    return inList(list.map { CompositeEntityIDFunctionProvider.createEntityID(it, idTable) })
+}
+
+@Suppress("UNCHECKED_CAST")
+@JvmName("optCompositeIdInList")
+infix fun <T : Comparable<T>> Column<CompositeEntityIdPart<T>?>.inListOpt(list: Iterable<T>): InListOrNotInListOp<CompositeEntityIdPart<T>?> {
+    fun <T> ExpressionWithColumnType<T>.inList(list: Iterable<T>): InListOrNotInListOp<T> =
+        InListOrNotInListOp(this, list, isInList = true)
+
+    val idTable = (columnType as CompositeEntityIdPartColumnType<T>).idColumn.table as CompositeIdTable<*, T>
+    return inList(list.map { CompositeEntityIDFunctionProvider.createEntityID(it, idTable) })
 }
 
 interface CompositeEntityIDFactory {
