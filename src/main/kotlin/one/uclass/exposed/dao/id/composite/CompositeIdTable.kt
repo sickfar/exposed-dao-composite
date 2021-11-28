@@ -2,6 +2,7 @@ package one.uclass.exposed.dao.id.composite
 
 import org.jetbrains.exposed.dao.id.EntityID
 import org.jetbrains.exposed.sql.*
+import org.jetbrains.exposed.sql.ops.SingleValueInListOp
 import org.jetbrains.exposed.sql.transactions.TransactionManager
 import org.jetbrains.exposed.sql.vendors.OracleDialect
 import org.jetbrains.exposed.sql.vendors.SQLiteDialect
@@ -58,9 +59,9 @@ class CompositeEntityIdPartColumnType<T : Comparable<T>>(val idColumn: Column<T>
 
 @Suppress("UNCHECKED_CAST")
 @JvmName("compositeIdInList")
-infix fun <T : Comparable<T>> Column<CompositeEntityIdPart<T>>.inList(list: Iterable<T>): InListOrNotInListOp<CompositeEntityIdPart<T>> {
-    fun <T> ExpressionWithColumnType<T>.inList(list: Iterable<T>): InListOrNotInListOp<T> =
-        InListOrNotInListOp(this, list, isInList = true)
+infix fun <T : Comparable<T>> Column<CompositeEntityIdPart<T>>.inList(list: Iterable<T>): SingleValueInListOp<CompositeEntityIdPart<T>> {
+    fun <T> ExpressionWithColumnType<T>.inList(list: Iterable<T>): SingleValueInListOp<T> =
+        SingleValueInListOp(this, list, isInList = true)
 
     val idTable = (columnType as CompositeEntityIdPartColumnType<T>).idColumn.table as CompositeIdTable<*, T>
     return inList(list.map { CompositeEntityIDFunctionProvider.createEntityID(it, idTable) })
@@ -68,9 +69,9 @@ infix fun <T : Comparable<T>> Column<CompositeEntityIdPart<T>>.inList(list: Iter
 
 @Suppress("UNCHECKED_CAST")
 @JvmName("optCompositeIdInList")
-infix fun <T : Comparable<T>> Column<CompositeEntityIdPart<T>?>.inListOpt(list: Iterable<T>): InListOrNotInListOp<CompositeEntityIdPart<T>?> {
-    fun <T> ExpressionWithColumnType<T>.inList(list: Iterable<T>): InListOrNotInListOp<T> =
-        InListOrNotInListOp(this, list, isInList = true)
+infix fun <T : Comparable<T>> Column<CompositeEntityIdPart<T>?>.inListOpt(list: Iterable<T>): SingleValueInListOp<CompositeEntityIdPart<T>?> {
+    fun <T> ExpressionWithColumnType<T>.inList(list: Iterable<T>): SingleValueInListOp<T> =
+        SingleValueInListOp(this, list, isInList = true)
 
     val idTable = (columnType as CompositeEntityIdPartColumnType<T>).idColumn.table as CompositeIdTable<*, T>
     return inList(list.map { CompositeEntityIDFunctionProvider.createEntityID(it, idTable) })
@@ -128,7 +129,6 @@ abstract class CompositeIdTable<ClassifierID : Comparable<ClassifierID>, ID : Co
     @Suppress("UNCHECKED_CAST")
     fun <T : Comparable<T>> Column<T>.compositeIdPart(): Column<CompositeEntityIdPart<T>> {
         val newColumn = Column<CompositeEntityIdPart<T>>(table, name, CompositeEntityIdPartColumnType(this)).also {
-            it.indexInPK = indexInPK
             it.defaultValueFun = defaultValueFun?.let {
                 {
                     CompositeEntityIDFunctionProvider.createEntityID(
@@ -172,7 +172,7 @@ abstract class CompositeIdTable<ClassifierID : Comparable<ClassifierID>, ID : Co
     }
 
     override fun createStatement(): List<String> {
-        val createSequence = autoIncColumn?.autoIncSeqName?.let { Sequence(it).createStatement() }.orEmpty()
+        val createSequence = autoIncColumn?.autoIncColumnType?.autoincSeq?.let { Sequence(it).createStatement() }.orEmpty()
 
         val addForeignKeysInAlterPart = SchemaUtils.checkCycle(this) && currentDialect !is SQLiteDialect
 
